@@ -1,10 +1,10 @@
 #Python
-
 import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import date, time, timedelta
 from streamlit_calendar import calendar
+import streamlit.components.v1 as components
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y BASE DE DATOS
@@ -74,6 +74,14 @@ if "id_evento_editar" not in st.session_state:
 if "modo_crear_arriba" not in st.session_state:
     st.session_state["modo_crear_arriba"] = False
 
+# Función para hacer scroll automático hacia arriba de la página
+def subir_scroll():
+    components.html("""
+        <script>
+            window.parent.window.scrollTo({top: 0, behavior: 'smooth'});
+        </script>
+    """, height=0)
+
 # ---------------------------------------------------------
 # 3. PANTALLA PRINCIPAL Y CALENDARIO
 # ---------------------------------------------------------
@@ -84,30 +92,33 @@ df_eventos = pd.read_sql("SELECT * FROM eventos ORDER BY fecha ASC, hora ASC", c
 conn.close()
 
 # ---------------------------------------------------------
-# PANEL SUPERIOR: CREAR O EDITAR EVENTO (Con selectores automáticos de hora)
+# PANEL SUPERIOR: CREAR O EDITAR EVENTO
 # ---------------------------------------------------------
 if st.session_state.get("modo_crear_arriba"):
+    subir_scroll()
     with st.container(border=True):
         st.markdown(f"### ➕ Agendar Nuevo Evento (Fecha: {st.session_state['fecha_seleccionada']})")
-        with st.form(key="form_crear_superior"):
+        
+        # Formulario limpio sin valores residuales forzados en los inputs de texto
+        with st.form(key="form_crear_superior", clear_on_submit=True):
             titulo_c = st.text_input("Título del evento *", placeholder="Ej: Culto Especial")
-            min_c = st.selectbox("Ministerio / Área", list(COLORES_MINISTERIO.keys()), key="c_min_nuevo")
-            salon_c = st.selectbox("Salón / Lugar", LISTA_SALONES, key="c_sal_nuevo")
+            min_c = st.selectbox("Ministerio / Área", list(COLORES_MINISTERIO.keys()))
+            salon_c = st.selectbox("Salón / Lugar", LISTA_SALONES)
             
             col_fc1, col_fc2 = st.columns(2)
             with col_fc1:
-                f_ini_c = st.date_input("Fecha Desde *", value=st.session_state["fecha_seleccionada"], key="c_fi_nuevo")
+                f_ini_c = st.date_input("Fecha Desde *", value=st.session_state["fecha_seleccionada"])
             with col_fc2:
-                f_fin_c = st.date_input("Fecha Hasta *", value=st.session_state["fecha_seleccionada"], key="c_ff_nuevo")
+                f_fin_c = st.date_input("Fecha Hasta *", value=st.session_state["fecha_seleccionada"])
                 
             col_hc1, col_hc2 = st.columns(2)
             with col_hc1:
-                h_ini_c = st.time_input("Hora Inicio *", value=time(19, 30), key="c_hi_nuevo")
+                h_ini_c = st.time_input("Hora Inicio *", value=time(19, 30))
             with col_hc2:
-                h_fin_c = st.time_input("Hora Fin *", value=time(21, 30), key="c_hf_nuevo")
+                h_fin_c = st.time_input("Hora Fin *", value=time(21, 30))
                 
-            enc_c = st.text_input("Encargado responsable *", placeholder="Ej: Carlos Gómez", key="c_enc_nuevo")
-            notas_c = st.text_area("Notas operativas (Sonido, llaves, comida...)", key="c_not_nuevo")
+            enc_c = st.text_input("Encargado responsable *", placeholder="Ej: Carlos Gómez")
+            notas_c = st.text_area("Notas operativas (Sonido, llaves, comida...)")
             
             col_bc1, col_bc2 = st.columns(2)
             with col_bc1:
@@ -138,13 +149,13 @@ if st.session_state.get("modo_crear_arriba"):
                 st.rerun()
 
 elif st.session_state.get("id_evento_editar"):
+    subir_scroll()
     ev_id_act = st.session_state["id_evento_editar"]
     evento_actual = df_eventos[df_eventos["id"] == ev_id_act]
     
     if not evento_actual.empty:
         fila_ed = evento_actual.iloc[0]
         
-        # Convertimos las horas de texto de la base a objetos time para el selector
         t_ini_val = time(19, 30)
         if pd.notna(fila_ed["hora"]) and ":" in str(fila_ed["hora"]):
             partes_h = fila_ed["hora"].split(":")
