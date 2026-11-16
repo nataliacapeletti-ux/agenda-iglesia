@@ -63,10 +63,13 @@ def inicializar_db():
 inicializar_db()
 
 # ---------------------------------------------------------
-# 2. GESTIÓN DE ESTADOS
+# 2. GESTIÓN DE ESTADOS Y PERMISOS
 # ---------------------------------------------------------
 if "fecha_seleccionada" not in st.session_state:
     st.session_state["fecha_seleccionada"] = date.today()
+
+if "id_evento_ver" not in st.session_state:
+    st.session_state["id_evento_ver"] = None
 
 if "id_evento_editar" not in st.session_state:
     st.session_state["id_evento_editar"] = None
@@ -74,7 +77,11 @@ if "id_evento_editar" not in st.session_state:
 if "modo_crear_arriba" not in st.session_state:
     st.session_state["modo_crear_arriba"] = False
 
-# Función para hacer scroll automático hacia arriba
+# Selector de modo en la barra lateral
+st.sidebar.title("⚙️ Opciones")
+modo_usuario = st.sidebar.radio("Modo de Vista", ["Administrador (Gestión total)", "Solo Lectura (Consultas)"], index=0)
+es_admin = (modo_usuario == "Administrador (Gestión total)")
+
 def subir_scroll():
     components.html("""
         <script>
@@ -87,17 +94,59 @@ def subir_scroll():
 # ---------------------------------------------------------
 st.title("📅 Agenda Compartida de la Iglesia")
 
+if not es_admin:
+    st.info("👁️ **Modo Solo Lectura**: Estás visualizando la agenda de la iglesia.")
+
 conn = conectar_db()
 df_eventos = pd.read_sql("SELECT * FROM eventos ORDER BY fecha ASC, hora ASC", conn)
 conn.close()
 
 # ---------------------------------------------------------
-# PANEL SUPERIOR: CREAR O EDITAR EVENTO
+# PANELES SUPERIORES (DETALLE, EDICIÓN O CREACIÓN)
 # ---------------------------------------------------------
-if st.session_state.get("modo_crear_arriba"):
+
+# A. VISTA DE DETALLE (Al hacer clic en un evento)
+if st.session_state.get("id_evento_ver") and not st.session_state.get("id_evento_editar"):
+    subir_scroll()
+    ev_id_ver = st.session_state["id_evento_ver"]
+    evento_actual = df_eventos[df_eventos["id"] == ev_id_ver]
+    
+    if not evento_actual.empty:
+        fila_v = evento_actual.iloc[0]
+        with st.container(border=True):
+            st.markdown(f"### 📋 Detalle del Evento: **{fila_v['titulo']}**")
+            
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                st.write(f"🏷️ **Ministerio:** {fila_v['ministerio']}")
+                st.write(f"📍 **Salón / Lugar:** {fila_v['salon']}")
+                fechas_txt = f"{fila_v['fecha']}" if fila_v['fecha'] == fila_v['fecha_fin'] else f"{fila_v['fecha']} al {fila_v['fecha_fin']}"
+                st.write(f"📆 **Fecha:** {fechas_txt}")
+            with col_d2:
+                h_fin_txt = f" a {fila_v['hora_fin']} hs" if pd.notna(fila_v['hora_fin']) and fila_v['hora_fin'] != "" else ""
+                st.write(f"⏰ **Horario:** {fila_v['hora']}{h_fin_txt}")
+                st.write(f"👤 **Encargado:** {fila_v['encargado']}")
+            
+            if pd.notna(fila_v['notas']) and fila_v['notas'].strip() != "":
+                st.info(f"📝 **Notas operativas:** {fila_v['notas']}")
+            
+            col_ba1, col_ba2, _ = st.columns([1, 1, 2])
+            with col_ba1:
+                if es_admin:
+                    if st.button("✏️ Editar este evento"):
+                        st.session_state["id_evento_editar"] = ev_id_ver
+                        st.session_state["id_evento_ver"] = None
+                        st.rerun()
+            with col_ba2:
+                if st.button("❌ Cerrar Detalle"):
+                    st.session_state["id_evento_ver"] = None
+                    st.rerun()
+
+# B. VISTA DE CREACIÓN DE EVENTO NUEVO
+elif st.session_state.get("modo_crear_arriba") and es_admin:
     subir_scroll()
     with st.container(border=True):
-        st.markdown(f"### ➕ Agendar Nuevo Evento (Fecha: {st.session_state['fecha_seleccionada']})")
+        st.markdown(f"### ➕ Agendar Nuevo Evento")
         
         with st.form(key="form_crear_superior"):
             titulo_c = st.text_input("Título del evento *", placeholder="Ej: Culto Especial")
@@ -147,7 +196,8 @@ if st.session_state.get("modo_crear_arriba"):
                 st.session_state["modo_crear_arriba"] = False
                 st.rerun()
 
-elif st.session_state.get("id_evento_editar"):
+# C. VISTA DE EDICIÓN
+elif st.session_state.get("id_evento_editar") and es_admin:
     subir_scroll()
     ev_id_act = st.session_state["id_evento_editar"]
     evento_actual = df_eventos[df_eventos["id"] == ev_id_act]
@@ -198,7 +248,7 @@ elif st.session_state.get("id_evento_editar"):
                 with col_b2:
                     borrar = st.form_submit_button("🗑️ Borrar Evento")
                 with col_b3:
-                    cerrar = st.form_submit_button("❌ Cerrar Panel")
+                    cerrar = st.form_submit_button("❌ Cancelar")
 
                 if guardar:
                     conn = conectar_db()
@@ -226,14 +276,16 @@ elif st.session_state.get("id_evento_editar"):
                     st.session_state["id_evento_editar"] = None
                     st.rerun()
 
-# Botón superior para crear nuevo evento manualmente
-col_btn_crear, _ = st.columns([1, 4])
-with col_btn_crear:
-    if not st.session_state.get("modo_crear_arriba") and not st.session_state.get("id_evento_editar"):
-        if st.button("➕ Nuevo Evento"):
-            st.session_state["modo_crear_arriba"] = True
-            st.session_state["id_evento_editar"] = None
-            st.rerun()
+# Botón superior destacado para crear nuevo evento cómodamente desde el celu o compu
+if es_admin:
+    col_btn_crear, _ = st.columns([1, 4])
+    with col_btn_crear:
+        if not st.session_state.get("modo_crear_arriba") and not st.session_state.get("id_evento_editar") and not st.session_state.get("id_evento_ver"):
+            if st.button("➕ Nuevo Evento", type="primary"):
+                st.session_state["modo_crear_arriba"] = True
+                st.session_state["id_evento_editar"] = None
+                st.session_state["id_evento_ver"] = None
+                st.rerun()
 
 # Filtros rápidos
 col1, col2 = st.columns(2)
@@ -277,7 +329,7 @@ for _, fila in df_mostrar.iterrows():
 opciones_calendario = {
     "locale": "es",
     "initialView": "dayGridMonth",
-    "selectable": True,
+    "selectable": False, # Desactivamos la selección por arrastre/clic en espacios vacíos para evitar sensibilidad en celulares
     "headerToolbar": {
         "left": "prev,next today",
         "center": "title",
@@ -292,7 +344,7 @@ opciones_calendario = {
     "height": 600
 }
 
-# CONTENEDOR EXCLUSIVO PARA EL CALENDARIO (Garantiza que renderice limpio al cerrar paneles)
+# CONTENEDOR EXCLUSIVO PARA EL CALENDARIO
 container_calendario = st.empty()
 with container_calendario.container():
     estado_calendario = calendar(
@@ -301,31 +353,18 @@ with container_calendario.container():
         key="agenda_iglesia"
     )
 
-# Captura de clics en el calendario
-if estado_calendario.get("dateClick"):
-    clicked_date_str = estado_calendario["dateClick"]["date"][:10]
-    st.session_state["fecha_seleccionada"] = date.fromisoformat(clicked_date_str)
-    st.session_state["modo_crear_arriba"] = True
-    st.session_state["id_evento_editar"] = None
-    st.rerun()
-
-if estado_calendario.get("select"):
-    selected_start_str = estado_calendario["select"]["start"][:10]
-    st.session_state["fecha_seleccionada"] = date.fromisoformat(selected_start_str)
-    st.session_state["modo_crear_arriba"] = True
-    st.session_state["id_evento_editar"] = None
-    st.rerun()
-
+# Solo capturamos clics sobre eventos existentes para ver su detalle
 if estado_calendario.get("eventClick"):
     evento_sel = estado_calendario["eventClick"]["event"]
-    st.session_state["id_evento_editar"] = int(evento_sel.get("id"))
+    st.session_state["id_evento_ver"] = int(evento_sel.get("id"))
     st.session_state["modo_crear_arriba"] = False
+    st.session_state["id_evento_editar"] = None
     st.rerun()
 
 # ---------------------------------------------------------
-# 4. LISTADO INFERIOR PARA GESTIÓN
+# 4. LISTADO INFERIOR
 # ---------------------------------------------------------
-with st.expander("📋 Ver listado completo y administrar eventos (Editar / Borrar)", expanded=False):
+with st.expander("📋 Ver listado completo de eventos", expanded=False):
     if df_mostrar.empty:
         st.write("No hay eventos para mostrar con los filtros actuales.")
     else:
@@ -341,7 +380,8 @@ with st.expander("📋 Ver listado completo y administrar eventos (Editar / Borr
                     st.write(f"📆 {fechas_txt} | ⏰ {fila['hora']}{h_fin_txt}")
                     st.write(f"👤 {fila['encargado']}")
                 with c3:
-                    if st.button("✏️ Editar", key=f"admin_{fila['id']}"):
-                        st.session_state["id_evento_editar"] = int(fila['id'])
+                    if st.button("Ver detalle", key=f"ver_{fila['id']}"):
+                        st.session_state["id_evento_ver"] = int(fila['id'])
                         st.session_state["modo_crear_arriba"] = False
-                        st.rerun() 
+                        st.session_state["id_evento_editar"] = None
+                        st.rerun()
