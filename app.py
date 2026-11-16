@@ -397,7 +397,7 @@ with st.expander("📋 Ver listado completo de eventos", expanded=False):
                     st.write(f"**{fila['titulo']}**")
                     st.write(f"🏷️ {fila['ministerio']} | 📍 {fila['salon']}")
                 with c2:
-                    fechas_txt = f"{fila['fecha']}" if fila['fecha'] == fila['fecha_fin'] exacto else f"{fila['fecha']} al {fila['fecha_fin']}" if fila['fecha'] != fila['fecha_fin'] else f"{fila['fecha']}"
+                    fechas_txt = f"{fila['fecha']}" if fila['fecha'] == fila['fecha_fin'] else f"{fila['fecha']} al {fila['fecha_fin']}"
                     h_fin_txt = f" a {fila['hora_fin']} hs" if pd.notna(fila['hora_fin']) and fila['hora_fin'] != "" else ""
                     st.write(f"📆 {fechas_txt} | ⏰ {fila['hora']}{h_fin_txt}")
                     st.write(f"👤 {fila['encargado']}")
