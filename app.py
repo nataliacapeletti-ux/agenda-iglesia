@@ -142,22 +142,24 @@ if st.session_state.get("id_evento_ver") and not st.session_state.get("id_evento
                     st.session_state["id_evento_ver"] = None
                     st.rerun()
 
-# B. VISTA DE CREACIÓN DE EVENTO NUEVO
+# B. VISTA DE CREACIÓN DE EVENTO NUEVO (Con fecha sincronizada)
 elif st.session_state.get("modo_crear_arriba") and es_admin:
     subir_scroll()
     with st.container(border=True):
-        st.markdown(f"### ➕ Agendar Nuevo Evento")
+        st.markdown(f"### ➕ Agendar Nuevo Evento (Fecha seleccionada: {st.session_state['fecha_seleccionada']})")
         
         with st.form(key="form_crear_superior"):
             titulo_c = st.text_input("Título del evento *", placeholder="Ej: Culto Especial")
             min_c = st.selectbox("Ministerio / Área", list(COLORES_MINISTERIO.keys()))
             salon_c = st.selectbox("Salón / Lugar", LISTA_SALONES)
             
+            # Fechas con sincronización automática
             col_fc1, col_fc2 = st.columns(2)
             with col_fc1:
                 f_ini_c = st.date_input("Fecha Desde *", value=st.session_state["fecha_seleccionada"])
             with col_fc2:
-                f_fin_c = st.date_input("Fecha Hasta *", value=st.session_state["fecha_seleccionada"])
+                # Por defecto toma la misma fecha de inicio seleccionada
+                f_fin_c = st.date_input("Fecha Hasta *", value=f_ini_c)
                 
             col_hc1, col_hc2 = st.columns(2)
             with col_hc1:
@@ -276,7 +278,7 @@ elif st.session_state.get("id_evento_editar") and es_admin:
                     st.session_state["id_evento_editar"] = None
                     st.rerun()
 
-# Botón superior destacado para crear nuevo evento cómodamente desde el celu o compu
+# Botón superior para crear nuevo evento
 if es_admin:
     col_btn_crear, _ = st.columns([1, 4])
     with col_btn_crear:
@@ -285,6 +287,8 @@ if es_admin:
                 st.session_state["modo_crear_arriba"] = True
                 st.session_state["id_evento_editar"] = None
                 st.session_state["id_evento_ver"] = None
+                # Si se usa este botón directo, toma la fecha de hoy
+                st.session_state["fecha_seleccionada"] = date.today()
                 st.rerun()
 
 # Filtros rápidos
@@ -329,7 +333,7 @@ for _, fila in df_mostrar.iterrows():
 opciones_calendario = {
     "locale": "es",
     "initialView": "dayGridMonth",
-    "selectable": False, # Desactivamos la selección por arrastre/clic en espacios vacíos para evitar sensibilidad en celulares
+    "selectable": es_admin, # Activamos de nuevo la selección por clic limpio en los días
     "headerToolbar": {
         "left": "prev,next today",
         "center": "title",
@@ -353,7 +357,25 @@ with container_calendario.container():
         key="agenda_iglesia"
     )
 
-# Solo capturamos clics sobre eventos existentes para ver su detalle
+# Captura de clics en espacios vacíos del calendario (Tocar una fecha para crear directo ahí)
+if es_admin:
+    if estado_calendario.get("dateClick"):
+        clicked_date_str = estado_calendario["dateClick"]["date"][:10]
+        st.session_state["fecha_seleccionada"] = date.fromisoformat(clicked_date_str)
+        st.session_state["modo_crear_arriba"] = True
+        st.session_state["id_evento_editar"] = None
+        st.session_state["id_evento_ver"] = None
+        st.rerun()
+
+    if estado_calendario.get("select"):
+        selected_start_str = estado_calendario["select"]["start"][:10]
+        st.session_state["fecha_seleccionada"] = date.fromisoformat(selected_start_str)
+        st.session_state["modo_crear_arriba"] = True
+        st.session_state["id_evento_editar"] = None
+        st.session_state["id_evento_ver"] = None
+        st.rerun()
+
+# Captura de clics en eventos existentes
 if estado_calendario.get("eventClick"):
     evento_sel = estado_calendario["eventClick"]["event"]
     st.session_state["id_evento_ver"] = int(evento_sel.get("id"))
@@ -375,7 +397,7 @@ with st.expander("📋 Ver listado completo de eventos", expanded=False):
                     st.write(f"**{fila['titulo']}**")
                     st.write(f"🏷️ {fila['ministerio']} | 📍 {fila['salon']}")
                 with c2:
-                    fechas_txt = f"{fila['fecha']}" if fila['fecha'] == fila['fecha_fin'] else f"{fila['fecha']} al {fila['fecha_fin']}"
+                    fechas_txt = f"{fila['fecha']}" if fila['fecha'] == fila['fecha_fin'] exacto else f"{fila['fecha']} al {fila['fecha_fin']}" if fila['fecha'] != fila['fecha_fin'] else f"{fila['fecha']}"
                     h_fin_txt = f" a {fila['hora_fin']} hs" if pd.notna(fila['hora_fin']) and fila['hora_fin'] != "" else ""
                     st.write(f"📆 {fechas_txt} | ⏰ {fila['hora']}{h_fin_txt}")
                     st.write(f"👤 {fila['encargado']}")
