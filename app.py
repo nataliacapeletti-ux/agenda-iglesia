@@ -74,7 +74,7 @@ if "id_evento_editar" not in st.session_state:
 if "modo_crear_arriba" not in st.session_state:
     st.session_state["modo_crear_arriba"] = False
 
-# Función para hacer scroll automático hacia arriba de la página
+# Función para hacer scroll automático hacia arriba
 def subir_scroll():
     components.html("""
         <script>
@@ -99,8 +99,7 @@ if st.session_state.get("modo_crear_arriba"):
     with st.container(border=True):
         st.markdown(f"### ➕ Agendar Nuevo Evento (Fecha: {st.session_state['fecha_seleccionada']})")
         
-        # Formulario limpio sin valores residuales forzados en los inputs de texto
-        with st.form(key="form_crear_superior", clear_on_submit=True):
+        with st.form(key="form_crear_superior"):
             titulo_c = st.text_input("Título del evento *", placeholder="Ej: Culto Especial")
             min_c = st.selectbox("Ministerio / Área", list(COLORES_MINISTERIO.keys()))
             salon_c = st.selectbox("Salón / Lugar", LISTA_SALONES)
@@ -293,11 +292,14 @@ opciones_calendario = {
     "height": 600
 }
 
-estado_calendario = calendar(
-    events=eventos_calendario,
-    options=opciones_calendario,
-    key="agenda_iglesia"
-)
+# CONTENEDOR EXCLUSIVO PARA EL CALENDARIO (Garantiza que renderice limpio al cerrar paneles)
+container_calendario = st.empty()
+with container_calendario.container():
+    estado_calendario = calendar(
+        events=eventos_calendario,
+        options=opciones_calendario,
+        key="agenda_iglesia"
+    )
 
 # Captura de clics en el calendario
 if estado_calendario.get("dateClick"):
@@ -342,4 +344,4 @@ with st.expander("📋 Ver listado completo y administrar eventos (Editar / Borr
                     if st.button("✏️ Editar", key=f"admin_{fila['id']}"):
                         st.session_state["id_evento_editar"] = int(fila['id'])
                         st.session_state["modo_crear_arriba"] = False
-                        st.rerun()
+                        st.rerun() 
