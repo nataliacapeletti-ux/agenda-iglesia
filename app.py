@@ -1,13 +1,14 @@
 #Python
 import streamlit as st
-import sqlite3
 import pandas as pd
 from datetime import date, time, timedelta
 from streamlit_calendar import calendar
 import streamlit.components.v1 as components
+import gspread
+from google.oauth2.service_account import Credentials
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DE PÁGINA Y BASE DE DATOS
+# 1. CONFIGURACIÓN DE PÁGINA Y CONEXIÓN GOOGLE SHEETS
 # ---------------------------------------------------------
 st.set_page_config(page_title="Agenda Iglesia", page_icon="📅", layout="wide")
 
@@ -29,38 +30,39 @@ COLORES_MINISTERIO = {
 
 LISTA_SALONES = ["Salón Arriba", "Salón Abajo", "Patio", "Fuera de la iglesia"]
 
-def conectar_db():
-    return sqlite3.connect("agenda_iglesia.db", check_same_thread=False)
+def conectar_sheets():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    # Abre la planilla por su nombre exacto en Google Drive
+    sheet = client.open("Agenda_Iglesia_DB").sheet1
+    return sheet
 
-def inicializar_db():
-    conn = conectar_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS eventos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            titulo TEXT NOT NULL,
-            ministerio TEXT NOT NULL,
-            salon TEXT NOT NULL,
-            fecha TEXT NOT NULL,
-            fecha_fin TEXT,
-            hora TEXT NOT NULL,
-            hora_fin TEXT,
-            encargado TEXT NOT NULL,
-            notas TEXT
-        )
-    """)
+def obtener_datos_db():
+    sheet = conectar_sheets()
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
     
-    cursor.execute("PRAGMA table_info(eventos)")
-    columnas = [info[1] for info in cursor.fetchall()]
-    if "fecha_fin" not in columnas:
-        cursor.execute("ALTER TABLE eventos ADD COLUMN fecha_fin TEXT")
-    if "hora_fin" not in columnas:
-        cursor.execute("ALTER TABLE eventos ADD COLUMN hora_fin TEXT")
+    # Si la planilla está vacía, aseguramos las columnas mínimas
+    columnas_esperadas = ["id", "titulo", "ministerio", "salon", "fecha", "fecha_fin", "hora", "hora_fin", "encargado", "notas"]
+    if df.empty:
+        return pd.DataFrame(columns=columnas_esperadas)
+    
+    for col in columnas_esperadas:
+        if col not in df.columns:
+            df[col] = ""
+            
+    # Asegurar que el id sea numérico si existe
+    if not df.empty and "id" in df.columns:
+        df["id"] = pd.to_numeric(df["id"], errors="coerce").fillna(0).astype(int)
         
-    conn.commit()
-    conn.close()
-
-inicializar_db()
+    return df.sort_values(by=["fecha", "hora"], ascending=[True, True])
 
 # ---------------------------------------------------------
 # 2. GESTIÓN DE ESTADOS Y PERMISOS
@@ -77,7 +79,6 @@ if "id_evento_editar" not in st.session_state:
 if "modo_crear_arriba" not in st.session_state:
     st.session_state["modo_crear_arriba"] = False
 
-# Selector de modo en la barra lateral
 st.sidebar.title("⚙️ Opciones")
 modo_usuario = st.sidebar.radio("Modo de Vista", ["Administrador (Gestión total)", "Solo Lectura (Consultas)"], index=0)
 es_admin = (modo_usuario == "Administrador (Gestión total)")
@@ -97,15 +98,13 @@ st.title("📅 Agenda Compartida de la Iglesia")
 if not es_admin:
     st.info("👁️ **Modo Solo Lectura**: Estás visualizando la agenda de la iglesia.")
 
-conn = conectar_db()
-df_eventos = pd.read_sql("SELECT * FROM eventos ORDER BY fecha ASC, hora ASC", conn)
-conn.close()
+df_eventos = obtener_datos_db()
 
 # ---------------------------------------------------------
 # PANELES SUPERIORES (DETALLE, EDICIÓN O CREACIÓN)
 # ---------------------------------------------------------
 
-# A. VISTA DE DETALLE (Al hacer clic en un evento)
+# A. VISTA DE DETALLE
 if st.session_state.get("id_evento_ver") and not st.session_state.get("id_evento_editar"):
     subir_scroll()
     ev_id_ver = st.session_state["id_evento_ver"]
@@ -123,11 +122,11 @@ if st.session_state.get("id_evento_ver") and not st.session_state.get("id_evento
                 fechas_txt = f"{fila_v['fecha']}" if fila_v['fecha'] == fila_v['fecha_fin'] else f"{fila_v['fecha']} al {fila_v['fecha_fin']}"
                 st.write(f"📆 **Fecha:** {fechas_txt}")
             with col_d2:
-                h_fin_txt = f" a {fila_v['hora_fin']} hs" if pd.notna(fila_v['hora_fin']) and fila_v['hora_fin'] != "" else ""
+                h_fin_txt = f" a {fila_v['hora_fin']} hs" if pd.notna(fila_v['hora_fin']) and str(fila_v['hora_fin']).strip() != "" else ""
                 st.write(f"⏰ **Horario:** {fila_v['hora']}{h_fin_txt}")
                 st.write(f"👤 **Encargado:** {fila_v['encargado']}")
             
-            if pd.notna(fila_v['notas']) and fila_v['notas'].strip() != "":
+            if pd.notna(fila_v['notas']) and str(fila_v['notas']).strip() != "":
                 st.info(f"📝 **Notas operativas:** {fila_v['notas']}")
             
             col_ba1, col_ba2, _ = st.columns([1, 1, 2])
@@ -142,7 +141,7 @@ if st.session_state.get("id_evento_ver") and not st.session_state.get("id_evento
                     st.session_state["id_evento_ver"] = None
                     st.rerun()
 
-# B. VISTA DE CREACIÓN DE EVENTO NUEVO (Con fecha sincronizada)
+# B. VISTA DE CREACIÓN
 elif st.session_state.get("modo_crear_arriba") and es_admin:
     subir_scroll()
     with st.container(border=True):
@@ -153,12 +152,10 @@ elif st.session_state.get("modo_crear_arriba") and es_admin:
             min_c = st.selectbox("Ministerio / Área", list(COLORES_MINISTERIO.keys()))
             salon_c = st.selectbox("Salón / Lugar", LISTA_SALONES)
             
-            # Fechas con sincronización automática
             col_fc1, col_fc2 = st.columns(2)
             with col_fc1:
                 f_ini_c = st.date_input("Fecha Desde *", value=st.session_state["fecha_seleccionada"])
             with col_fc2:
-                # Por defecto toma la misma fecha de inicio seleccionada
                 f_fin_c = st.date_input("Fecha Hasta *", value=f_ini_c)
                 
             col_hc1, col_hc2 = st.columns(2)
@@ -181,15 +178,26 @@ elif st.session_state.get("modo_crear_arriba") and es_admin:
                     if f_fin_c < f_ini_c:
                         st.error("⚠️ La fecha de fin no puede ser anterior a la de inicio.")
                     else:
-                        conn = conectar_db()
-                        conn.execute("""
-                            INSERT INTO eventos (titulo, ministerio, salon, fecha, fecha_fin, hora, hora_fin, encargado, notas)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (titulo_c, min_c, salon_c, str(f_ini_c), str(f_fin_c), h_ini_c.strftime("%H:%M"), h_fin_c.strftime("%H:%M"), enc_c, notas_c))
-                        conn.commit()
-                        conn.close()
+                        sheet = conectar_sheets()
+                        # Generar ID único basado en milisegundos o autoincremental seguro
+                        df_actual = obtener_datos_db()
+                        nuevo_id = int(df_eventos["id"].max() + 1) if not df_eventos.empty and df_eventos["id"].max() > 0 else 1
+                        
+                        nuevo_registro = [
+                            nuevo_id,
+                            titulo_c,
+                            min_c,
+                            salon_c,
+                            str(f_ini_c),
+                            str(f_fin_c),
+                            h_ini_c.strftime("%H:%M"),
+                            h_fin_c.strftime("%H:%M"),
+                            enc_c,
+                            notas_c
+                        ]
+                        sheet.append_row(nuevo_registro)
                         st.session_state["modo_crear_arriba"] = False
-                        st.success("¡Evento agendado con éxito!")
+                        st.success("¡Evento agendado con éxito en Google Sheets!")
                         st.rerun()
                 else:
                     st.error("⚠️ Completá al menos el Título y el Encargado.")
@@ -209,12 +217,12 @@ elif st.session_state.get("id_evento_editar") and es_admin:
         
         t_ini_val = time(19, 30)
         if pd.notna(fila_ed["hora"]) and ":" in str(fila_ed["hora"]):
-            partes_h = fila_ed["hora"].split(":")
+            partes_h = str(fila_ed["hora"]).split(":")
             t_ini_val = time(int(partes_h[0]), int(partes_h[1]))
             
         t_fin_val = time(21, 30)
         if pd.notna(fila_ed["hora_fin"]) and ":" in str(fila_ed["hora_fin"]):
-            partes_hf = fila_ed["hora_fin"].split(":")
+            partes_hf = str(fila_ed["hora_fin"]).split(":")
             t_fin_val = time(int(partes_hf[0]), int(partes_hf[1]))
 
         with st.container(border=True):
@@ -230,9 +238,9 @@ elif st.session_state.get("id_evento_editar") and es_admin:
                 
                 col_e1, col_e2 = st.columns(2)
                 with col_e1:
-                    nueva_f_inicio = st.date_input("Fecha Desde", value=date.fromisoformat(fila_ed["fecha"]))
+                    nueva_f_inicio = st.date_input("Fecha Desde", value=date.fromisoformat(str(fila_ed["fecha"])))
                 with col_e2:
-                    f_fin_val = date.fromisoformat(fila_ed["fecha_fin"]) if pd.notna(fila_ed["fecha_fin"]) and fila_ed["fecha_fin"] != "" else date.fromisoformat(fila_ed["fecha"])
+                    f_fin_val = date.fromisoformat(str(fila_ed["fecha_fin"])) if pd.notna(fila_ed["fecha_fin"]) and str(fila_ed["fecha_fin"]) != "" else date.fromisoformat(str(fila_ed["fecha"]))
                     nueva_f_fin = st.date_input("Fecha Hasta", value=f_fin_val)
                     
                 col_eh1, col_eh2 = st.columns(2)
@@ -253,25 +261,29 @@ elif st.session_state.get("id_evento_editar") and es_admin:
                     cerrar = st.form_submit_button("❌ Cancelar")
 
                 if guardar:
-                    conn = conectar_db()
-                    conn.execute("""
-                        UPDATE eventos 
-                        SET titulo = ?, ministerio = ?, salon = ?, fecha = ?, fecha_fin = ?, hora = ?, hora_fin = ?, encargado = ?, notas = ?
-                        WHERE id = ?
-                    """, (nuevo_titulo, nuevo_min, nuevo_salon, str(nueva_f_inicio), str(nueva_f_fin), nueva_h_ini.strftime("%H:%M"), nueva_h_fin.strftime("%H:%M"), nuevo_encargado, nuevas_notas, ev_id_act))
-                    conn.commit()
-                    conn.close()
+                    sheet = conectar_sheets()
+                    cell = sheet.find(str(ev_id_act))
+                    if cell:
+                        fila_num = cell.row
+                        sheet.update(values=[[
+                            int(ev_id_act), nuevo_titulo, nuevo_min, nuevo_salon, 
+                            str(nueva_f_inicio), str(nueva_f_fin), 
+                            nueva_h_ini.strftime("%H:%M"), nueva_h_fin.strftime("%H:%M"), 
+                            nuevo_encargado, nuevas_notas
+                        ]], range_name=f"A{fila_num}:J{fila_num}")
+                    
                     st.session_state["id_evento_editar"] = None
-                    st.success("¡Actualizado con éxito!")
+                    st.success("¡Actualizado con éxito en Google Sheets!")
                     st.rerun()
 
                 if borrar:
-                    conn = conectar_db()
-                    conn.execute("DELETE FROM eventos WHERE id = ?", (ev_id_act,))
-                    conn.commit()
-                    conn.close()
+                    sheet = conectar_sheets()
+                    cell = sheet.find(str(ev_id_act))
+                    if cell:
+                        sheet.delete_rows(cell.row)
+                        
                     st.session_state["id_evento_editar"] = None
-                    st.success("¡Evento eliminado!")
+                    st.success("¡Evento eliminado de Google Sheets!")
                     st.rerun()
 
                 if cerrar:
@@ -287,7 +299,6 @@ if es_admin:
                 st.session_state["modo_crear_arriba"] = True
                 st.session_state["id_evento_editar"] = None
                 st.session_state["id_evento_ver"] = None
-                # Si se usa este botón directo, toma la fecha de hoy
                 st.session_state["fecha_seleccionada"] = date.today()
                 st.rerun()
 
@@ -309,9 +320,9 @@ if filtro_salon:
 eventos_calendario = []
 for _, fila in df_mostrar.iterrows():
     f_inicio = fila["fecha"]
-    f_fin_db = fila["fecha_fin"] if pd.notna(fila["fecha_fin"]) and fila["fecha_fin"] != "" else fila["fecha"]
-    h_ini = fila["hora"] if pd.notna(fila["hora"]) and fila["hora"] != "" else "19:30"
-    h_fin = fila["hora_fin"] if pd.notna(fila["hora_fin"]) and fila["hora_fin"] != "" else "23:59"
+    f_fin_db = fila["fecha_fin"] if pd.notna(fila["fecha_fin"]) and str(fila["fecha_fin"]).strip() != "" else fila["fecha"]
+    h_ini = fila["hora"] if pd.notna(fila["hora"]) and str(fila["hora"]).strip() != "" else "19:30"
+    h_fin = fila["hora_fin"] if pd.notna(fila["hora_fin"]) and str(fila["hora_fin"]).strip() != "" else "23:59"
 
     eventos_calendario.append({
         "id": str(fila["id"]),
@@ -333,7 +344,7 @@ for _, fila in df_mostrar.iterrows():
 opciones_calendario = {
     "locale": "es",
     "initialView": "dayGridMonth",
-    "selectable": es_admin, # Activamos de nuevo la selección por clic limpio en los días
+    "selectable": es_admin,
     "headerToolbar": {
         "left": "prev,next today",
         "center": "title",
@@ -357,7 +368,7 @@ with container_calendario.container():
         key="agenda_iglesia"
     )
 
-# Captura de clics en espacios vacíos del calendario (Tocar una fecha para crear directo ahí)
+# Captura de clics en espacios vacíos
 if es_admin:
     if estado_calendario.get("dateClick"):
         clicked_date_str = estado_calendario["dateClick"]["date"][:10]
@@ -398,7 +409,7 @@ with st.expander("📋 Ver listado completo de eventos", expanded=False):
                     st.write(f"🏷️ {fila['ministerio']} | 📍 {fila['salon']}")
                 with c2:
                     fechas_txt = f"{fila['fecha']}" if fila['fecha'] == fila['fecha_fin'] else f"{fila['fecha']} al {fila['fecha_fin']}"
-                    h_fin_txt = f" a {fila['hora_fin']} hs" if pd.notna(fila['hora_fin']) and fila['hora_fin'] != "" else ""
+                    h_fin_txt = f" a {fila['hora_fin']} hs" if pd.notna(fila['hora_fin']) and str(fila['hora_fin']).strip() != "" else ""
                     st.write(f"📆 {fechas_txt} | ⏰ {fila['hora']}{h_fin_txt}")
                     st.write(f"👤 {fila['encargado']}")
                 with c3:
