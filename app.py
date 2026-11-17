@@ -36,9 +36,10 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive.file",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Volvemos a leer de gcp_service_account que es donde pusiste tus datos
-    creds_dict = dict(st.secrets["gcp_service_account"])
+    # Leemos exactamente de la sección [connections.gsheets]
+    creds_dict = dict(st.secrets["connections.gsheets"])
     
+    # Limpieza de la clave privada por si quedan barras invertidas
     pk = creds_dict.get("private_key", "")
     if "\\n" in pk:
         pk = pk.replace("\\n", "\n")
@@ -46,7 +47,10 @@ def conectar_sheets():
     
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    sheet = client.open("Agenda_Iglesia_DB").sheet1
+    
+    # Abrimos la planilla directamente usando la URL que guardaste en los secrets
+    url_sheet = st.secrets["connections.gsheets"]["spreadsheet"]
+    sheet = client.open_by_url(url_sheet).sheet1
     return sheet
 
 def obtener_datos_db():
