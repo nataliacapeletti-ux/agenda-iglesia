@@ -30,85 +30,34 @@ COLORES_MINISTERIO = {
 LISTA_SALONES = ["Salón Arriba", "Salón Abajo", "Patio", "Fuera de la iglesia"]
 
 def conectar_sheets():
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive.file",
-        "https://www.googleapis.com/auth/drive"
-    ]
+    # Usamos la conexión nativa de Streamlit para GSheets, que se encarga 
+    # de toda la seguridad y el formato de la clave automáticamente.
+    conn = st.connection("gsheets", type="gsheets")
     
-    if "connections.gsheets" in st.secrets:
-        sec = st.secrets["connections.gsheets"]
-    elif "gcp_service_account" in st.secrets:
-        sec = st.secrets["gcp_service_account"]
-    else:
-        sec = st.secrets
-
-    # Extracción de la clave cruda y limpieza profunda
-    pk_raw = str(sec.get("private_key", ""))
-    
-    # Si la clave vino con barras invertidas n, las convertimos en saltos reales
-    if "\\n" in pk_raw:
-        lines = pk_raw.split("\\n")
-    else:
-        lines = pk_raw.split("\n")
-        
-    # Limpiamos espacios y filtramos líneas vacías o con comillas sobrantes
-    clean_lines = [l.strip().strip('"\'') for l in lines if l.strip()]
-    
-    # Reconstruimos la clave en formato PEM estándar de 64 caracteres por línea
-    # (Esto evita cualquier problema de longitud o saltos intermedios)
-    if any("BEGIN PRIVATE KEY" in l for l in clean_lines):
-        # Filtramos los headers para quedarnos solo con el contenido base64 puro
-        body_lines = [l for l in clean_lines if "PRIVATE KEY" not in l]
-        base64_content = "".join(body_lines)
-        
-        # Partimos el contenido estrictamente en bloques de 64 caracteres
-        chunked_body = [base64_content[i:i+64] for i in range(0, len(base64_content), 64)]
-        
-        pk = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(chunked_body) + "\n-----END PRIVATE KEY-----\n"
-    else:
-        pk = pk_raw
-
-    creds_dict = {
-        "type": str(sec.get("type", "service_account")),
-        "project_id": str(sec.get("project_id", "")),
-        "private_key_id": str(sec.get("private_key_id", "")),
-        "private_key": pk,
-        "client_email": str(sec.get("client_email", "")),
-        "client_id": str(sec.get("client_id", "")),
-        "auth_uri": str(sec.get("auth_uri", "https://accounts.google.com/o/oauth2/auth")),
-        "token_uri": str(sec.get("token_uri", "https://oauth2.googleapis.com/token")),
-        "auth_provider_x509_cert_url": str(sec.get("auth_provider_x509_cert_url", "https://www.googleapis.com/oauth2/v1/certs")),
-        "client_x509_cert_url": str(sec.get("client_x509_cert_url", ""))
-    }
-    
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(creds)
-    
-    url_sheet = str(sec.get("spreadsheet", "https://docs.google.com/spreadsheets/d/1y9QdvfTmH_gJvAdxvAW3D-hPU6IBLPk7rKdml6zMCzU/edit?gid=0#gid=0"))
-    sheet = client.open_by_url(url_sheet).sheet1
-        
-    return sheet
+    # Leemos la planilla completa como un DataFrame de Pandas
+    df = conn.read(worksheet="Sheet1", ttl=0)
+    return conn, df
     
     
 def obtener_datos_db():
-    sheet = conectar_sheets()
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
+    # 1. Llamamos a la conexión nativa de Streamlit para GSheets
+    conn = st.connection("gsheets", type="gsheets")
     
-    columnas_esperadas = ["id", "titulo", "ministerio", "salon", "fecha", "fecha_fin", "hora", "hora_fin", "encargado", "notas"]
-    if df.empty:
-        return pd.DataFrame(columns=columnas_esperadas)
+    # 2. Leemos la planilla como un DataFrame (ttl=0 evita que guarde caché vieja)
+    df = conn.read(worksheet="Sheet1", ttl=0)
     
-    for col in columnas_esperadas:
-        if col not in df.columns:
-            df[col] = ""
-            
-    if not df.empty and "id" in df.columns:
-        df["id"] = pd.to_numeric(df["id"], errors="coerce").fillna(0).astype(int)
+    # 3. Limpieza opcional por si la planilla llega a venir vacía
+    if df.empty or "id" not in df.columns:
+        # Devolvemos un DataFrame vacío con las columnas que usa tu app
+        return pd.DataFrame(columns=["id", "title", "start", "end", "color", "ministro", "salon", "descripcion", "modo"])
         
-    return df.sort_values(by=["fecha", "hora"], ascending=[True, True])
+    return df
+
+def guardar_datos_db(df):
+    conn = st.connection("gsheets", type="gsheets")
+    # Sobrescribe la planilla de Google Sheets con el DataFrame actualizado
+    conn.update(worksheet="Sheet1", data=df)
+    
 
 # ---------------------------------------------------------
 # 2. GESTIÓN DE ESTADOS Y PERMISOS
