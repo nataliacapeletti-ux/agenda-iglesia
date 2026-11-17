@@ -37,32 +37,27 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # Intentamos leer de [connections.gsheets], y si no está, leemos de los secretos globales o de [gcp_service_account]
     try:
         creds_dict = dict(st.secrets["connections.gsheets"])
     except:
-        try:
-            creds_dict = dict(st.secrets["gcp_service_account"])
-        except:
-            creds_dict = dict(st.secrets)
-            
-    # Limpieza robusta de la clave privada por si tiene saltos de línea con barra
+        creds_dict = dict(st.secrets["gcp_service_account"])
+    
     pk = creds_dict.get("private_key", "")
-    if "\\n" in pk:
-        pk = pk.replace("\\n", "\n")
+    pk = pk.replace("\\n", "\n")
+    if "-----BEGIN PRIVATE KEY-----" in pk and not pk.startswith("-----BEGIN PRIVATE KEY-----\n"):
+        pk = pk.replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
     creds_dict["private_key"] = pk
     
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
     
-    # Buscamos la URL en los secretos o abrimos por nombre si no está la URL
     if "spreadsheet" in creds_dict:
         sheet = client.open_by_url(creds_dict["spreadsheet"]).sheet1
     else:
         sheet = client.open("Agenda_Iglesia_DB").sheet1
         
     return sheet
-
+    
 def obtener_datos_db():
     sheet = conectar_sheets()
     data = sheet.get_all_records()
