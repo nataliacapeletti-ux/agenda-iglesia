@@ -1,4 +1,3 @@
-#Python
 import streamlit as st
 import pandas as pd
 from datetime import date, time, timedelta
@@ -37,15 +36,13 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive.file",
         "https://www.googleapis.com/auth/drive"
     ]
-    creds_dict = dict(st.secrets["gcp_service_account"])
+    # Leemos directo desde la nueva sección [connections.gsheets]
+    creds_dict = dict(st.secrets["connections.gsheets"])
     
-    # Limpieza inteligente de la clave privada
-    pk = creds_dict["private_key"]
-    # Si tiene las barras con la 'n' literal, las reemplazamos por saltos reales
+    # Limpieza robusta de la clave privada
+    pk = creds_dict.get("private_key", "")
     if "\\n" in pk:
         pk = pk.replace("\\n", "\n")
-    # Aseguramos que comience y termine exactamente como un certificado PEM válido
-    pk = pk.strip('"').strip("'")
     creds_dict["private_key"] = pk
     
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
@@ -58,7 +55,6 @@ def obtener_datos_db():
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     
-    # Si la planilla está vacía, aseguramos las columnas mínimas
     columnas_esperadas = ["id", "titulo", "ministerio", "salon", "fecha", "fecha_fin", "hora", "hora_fin", "encargado", "notas"]
     if df.empty:
         return pd.DataFrame(columns=columnas_esperadas)
@@ -67,7 +63,6 @@ def obtener_datos_db():
         if col not in df.columns:
             df[col] = ""
             
-    # Asegurar que el id sea numérico si existe
     if not df.empty and "id" in df.columns:
         df["id"] = pd.to_numeric(df["id"], errors="coerce").fillna(0).astype(int)
         
@@ -188,8 +183,6 @@ elif st.session_state.get("modo_crear_arriba") and es_admin:
                         st.error("⚠️ La fecha de fin no puede ser anterior a la de inicio.")
                     else:
                         sheet = conectar_sheets()
-                        # Generar ID único basado en milisegundos o autoincremental seguro
-                        df_actual = obtener_datos_db()
                         nuevo_id = int(df_eventos["id"].max() + 1) if not df_eventos.empty and df_eventos["id"].max() > 0 else 1
                         
                         nuevo_registro = [
