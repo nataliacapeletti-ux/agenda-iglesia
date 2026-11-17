@@ -38,9 +38,14 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
     creds_dict = dict(st.secrets["gcp_service_account"])
+    
+    # Limpieza automática por si quedaron barras invertidas o saltos raros
+    pk = creds_dict["private_key"]
+    pk = pk.replace("\\n", "\n")
+    creds_dict["private_key"] = pk
+    
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    # Abre la planilla por su nombre exacto en Google Drive
     sheet = client.open("Agenda_Iglesia_DB").sheet1
     return sheet
 
