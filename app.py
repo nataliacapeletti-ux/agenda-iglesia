@@ -36,10 +36,9 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive.file",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Leemos directo desde la nueva sección [connections.gsheets]
-    creds_dict = dict(st.secrets["connections.gsheets"])
+    # Volvemos a leer de gcp_service_account que es donde pusiste tus datos
+    creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # Limpieza robusta de la clave privada
     pk = creds_dict.get("private_key", "")
     if "\\n" in pk:
         pk = pk.replace("\\n", "\n")
