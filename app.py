@@ -37,29 +37,32 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # Obtenemos el diccionario de secretos de forma segura
+    # Buscamos los datos sin importar dónde estén guardados en los Secrets
+    creds_dict = {}
     try:
-        creds_dict = dict(st.secrets["connections.gsheets"])
-    except:
-        creds_dict = dict(st.secrets["gcp_service_account"])
+        if "connections.gsheets" in st.secrets:
+            creds_dict = dict(st.secrets["connections.gsheets"])
+        elif "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+        else:
+            # Si los pusiste sueltos en la raíz sin corchetes
+            creds_dict = dict(st.secrets)
+    except Exception:
+        creds_dict = dict(st.secrets)
     
-    # Aseguramos que la clave privada tenga los saltos de línea reales de Google
+    # Limpieza y formateo de la clave privada
     pk = creds_dict.get("private_key", "")
-    # Reemplazamos cualquier variante de barra n por un salto de línea real
     pk = pk.replace("\\n", "\n")
     if "-----BEGIN PRIVATE KEY-----" in pk and not pk.startswith("-----BEGIN PRIVATE KEY-----\n"):
-        # Por si acaso le faltara el salto inicial tras el encabezado
         pk = pk.replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
     creds_dict["private_key"] = pk
     
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
     
-    # Abrimos la planilla por URL o por nombre
-    if "spreadsheet" in creds_dict:
-        sheet = client.open_by_url(creds_dict["spreadsheet"]).sheet1
-    else:
-        sheet = client.open("Agenda_Iglesia_DB").sheet1
+    # Abrimos la planilla mediante la URL (o usamos la predeterminada si no está en el diccionario)
+    url_sheet = creds_dict.get("spreadsheet", "https://docs.google.com/spreadsheets/d/1y9QdvfTmH_gJvAdxvAW3D-hPU6IBLPk7rKdml6zMCzU/edit?gid=0#gid=0")
+    sheet = client.open_by_url(url_sheet).sheet1
         
     return sheet
     
