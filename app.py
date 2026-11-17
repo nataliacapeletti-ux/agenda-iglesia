@@ -28,6 +28,7 @@ COLORES_MINISTERIO = {
 }
 
 LISTA_SALONES = ["Salón Arriba", "Salón Abajo", "Patio", "Fuera de la iglesia"]
+
 def conectar_sheets():
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -36,7 +37,6 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # Buscamos la sección de secretos disponible
     if "connections.gsheets" in st.secrets:
         sec = st.secrets["connections.gsheets"]
     elif "gcp_service_account" in st.secrets:
@@ -44,13 +44,24 @@ def conectar_sheets():
     else:
         sec = st.secrets
 
-    # Limpiamos correctamente los saltos de línea de la clave privada
+    # Procesamiento estricto de la clave privada
     pk = str(sec.get("private_key", ""))
-    pk = pk.replace("\\n", "\n")
-    if "-----BEGIN PRIVATE KEY-----" in pk and not pk.startswith("-----BEGIN PRIVATE KEY-----\n"):
-        pk = pk.replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
+    
+    # Limpiamos comillas extra si las hubiera al inicio o final
+    pk = pk.strip('"\'')
+    
+    # Reemplazamos las barras n literales por saltos de línea reales
+    if "\\n" in pk:
+        pk = pk.replace("\\n", "\n")
+        
+    # Aseguramos los encabezados exactos de la clave RSA
+    if "-----BEGIN PRIVATE KEY-----" in pk and "-----END PRIVATE KEY-----" in pk:
+        # Extraemos limpiamente el contenido entre los headers por si hay espacios raros
+        header = "-----BEGIN PRIVATE KEY-----"
+        footer = "-----END PRIVATE KEY-----"
+        content = pk[pk.find(header) + len(header):pk.find(footer)].strip()
+        pk = f"{header}\n{content}\n{footer}\n"
 
-    # Construimos el diccionario de credenciales de forma explícita y segura
     creds_dict = {
         "type": str(sec.get("type", "service_account")),
         "project_id": str(sec.get("project_id", "")),
@@ -67,7 +78,6 @@ def conectar_sheets():
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
     
-    # Abrimos la planilla mediante la URL configurada
     url_sheet = str(sec.get("spreadsheet", "https://docs.google.com/spreadsheets/d/1y9QdvfTmH_gJvAdxvAW3D-hPU6IBLPk7rKdml6zMCzU/edit?gid=0#gid=0"))
     sheet = client.open_by_url(url_sheet).sheet1
         
