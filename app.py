@@ -28,7 +28,6 @@ COLORES_MINISTERIO = {
 }
 
 LISTA_SALONES = ["Salón Arriba", "Salón Abajo", "Patio", "Fuera de la iglesia"]
-
 def conectar_sheets():
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -37,34 +36,43 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # Buscamos los datos sin importar dónde estén guardados en los Secrets
-    creds_dict = {}
-    try:
-        if "connections.gsheets" in st.secrets:
-            creds_dict = dict(st.secrets["connections.gsheets"])
-        elif "gcp_service_account" in st.secrets:
-            creds_dict = dict(st.secrets["gcp_service_account"])
-        else:
-            # Si los pusiste sueltos en la raíz sin corchetes
-            creds_dict = dict(st.secrets)
-    except Exception:
-        creds_dict = dict(st.secrets)
-    
-    # Limpieza y formateo de la clave privada
-    pk = creds_dict.get("private_key", "")
+    # Buscamos la sección de secretos disponible
+    if "connections.gsheets" in st.secrets:
+        sec = st.secrets["connections.gsheets"]
+    elif "gcp_service_account" in st.secrets:
+        sec = st.secrets["gcp_service_account"]
+    else:
+        sec = st.secrets
+
+    # Limpiamos correctamente los saltos de línea de la clave privada
+    pk = str(sec.get("private_key", ""))
     pk = pk.replace("\\n", "\n")
     if "-----BEGIN PRIVATE KEY-----" in pk and not pk.startswith("-----BEGIN PRIVATE KEY-----\n"):
         pk = pk.replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
-    creds_dict["private_key"] = pk
+
+    # Construimos el diccionario de credenciales de forma explícita y segura
+    creds_dict = {
+        "type": str(sec.get("type", "service_account")),
+        "project_id": str(sec.get("project_id", "")),
+        "private_key_id": str(sec.get("private_key_id", "")),
+        "private_key": pk,
+        "client_email": str(sec.get("client_email", "")),
+        "client_id": str(sec.get("client_id", "")),
+        "auth_uri": str(sec.get("auth_uri", "https://accounts.google.com/o/oauth2/auth")),
+        "token_uri": str(sec.get("token_uri", "https://oauth2.googleapis.com/token")),
+        "auth_provider_x509_cert_url": str(sec.get("auth_provider_x509_cert_url", "https://www.googleapis.com/oauth2/v1/certs")),
+        "client_x509_cert_url": str(sec.get("client_x509_cert_url", ""))
+    }
     
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
     
-    # Abrimos la planilla mediante la URL (o usamos la predeterminada si no está en el diccionario)
-    url_sheet = creds_dict.get("spreadsheet", "https://docs.google.com/spreadsheets/d/1y9QdvfTmH_gJvAdxvAW3D-hPU6IBLPk7rKdml6zMCzU/edit?gid=0#gid=0")
+    # Abrimos la planilla mediante la URL configurada
+    url_sheet = str(sec.get("spreadsheet", "https://docs.google.com/spreadsheets/d/1y9QdvfTmH_gJvAdxvAW3D-hPU6IBLPk7rKdml6zMCzU/edit?gid=0#gid=0"))
     sheet = client.open_by_url(url_sheet).sheet1
         
     return sheet
+    
     
 def obtener_datos_db():
     sheet = conectar_sheets()
