@@ -39,9 +39,13 @@ def conectar_sheets():
     ]
     creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # Limpieza automática por si quedaron barras invertidas o saltos raros
+    # Limpieza inteligente de la clave privada
     pk = creds_dict["private_key"]
-    pk = pk.replace("\\n", "\n")
+    # Si tiene las barras con la 'n' literal, las reemplazamos por saltos reales
+    if "\\n" in pk:
+        pk = pk.replace("\\n", "\n")
+    # Aseguramos que comience y termine exactamente como un certificado PEM válido
+    pk = pk.strip('"').strip("'")
     creds_dict["private_key"] = pk
     
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
