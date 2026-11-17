@@ -37,20 +37,25 @@ def conectar_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
     
+    # Obtenemos el diccionario de secretos de forma segura
     try:
         creds_dict = dict(st.secrets["connections.gsheets"])
     except:
         creds_dict = dict(st.secrets["gcp_service_account"])
     
+    # Aseguramos que la clave privada tenga los saltos de línea reales de Google
     pk = creds_dict.get("private_key", "")
+    # Reemplazamos cualquier variante de barra n por un salto de línea real
     pk = pk.replace("\\n", "\n")
     if "-----BEGIN PRIVATE KEY-----" in pk and not pk.startswith("-----BEGIN PRIVATE KEY-----\n"):
+        # Por si acaso le faltara el salto inicial tras el encabezado
         pk = pk.replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
     creds_dict["private_key"] = pk
     
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
     
+    # Abrimos la planilla por URL o por nombre
     if "spreadsheet" in creds_dict:
         sheet = client.open_by_url(creds_dict["spreadsheet"]).sheet1
     else:
