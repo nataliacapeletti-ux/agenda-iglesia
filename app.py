@@ -44,23 +44,31 @@ def conectar_sheets():
     else:
         sec = st.secrets
 
-    # Procesamiento estricto de la clave privada
-    pk = str(sec.get("private_key", ""))
+    # Extracción de la clave cruda y limpieza profunda
+    pk_raw = str(sec.get("private_key", ""))
     
-    # Limpiamos comillas extra si las hubiera al inicio o final
-    pk = pk.strip('"\'')
-    
-    # Reemplazamos las barras n literales por saltos de línea reales
-    if "\\n" in pk:
-        pk = pk.replace("\\n", "\n")
+    # Si la clave vino con barras invertidas n, las convertimos en saltos reales
+    if "\\n" in pk_raw:
+        lines = pk_raw.split("\\n")
+    else:
+        lines = pk_raw.split("\n")
         
-    # Aseguramos los encabezados exactos de la clave RSA
-    if "-----BEGIN PRIVATE KEY-----" in pk and "-----END PRIVATE KEY-----" in pk:
-        # Extraemos limpiamente el contenido entre los headers por si hay espacios raros
-        header = "-----BEGIN PRIVATE KEY-----"
-        footer = "-----END PRIVATE KEY-----"
-        content = pk[pk.find(header) + len(header):pk.find(footer)].strip()
-        pk = f"{header}\n{content}\n{footer}\n"
+    # Limpiamos espacios y filtramos líneas vacías o con comillas sobrantes
+    clean_lines = [l.strip().strip('"\'') for l in lines if l.strip()]
+    
+    # Reconstruimos la clave en formato PEM estándar de 64 caracteres por línea
+    # (Esto evita cualquier problema de longitud o saltos intermedios)
+    if any("BEGIN PRIVATE KEY" in l for l in clean_lines):
+        # Filtramos los headers para quedarnos solo con el contenido base64 puro
+        body_lines = [l for l in clean_lines if "PRIVATE KEY" not in l]
+        base64_content = "".join(body_lines)
+        
+        # Partimos el contenido estrictamente en bloques de 64 caracteres
+        chunked_body = [base64_content[i:i+64] for i in range(0, len(base64_content), 64)]
+        
+        pk = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(chunked_body) + "\n-----END PRIVATE KEY-----\n"
+    else:
+        pk = pk_raw
 
     creds_dict = {
         "type": str(sec.get("type", "service_account")),
