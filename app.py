@@ -29,54 +29,16 @@ COLORES_MINISTERIO = {
 
 LISTA_SALONES = ["Salón Arriba", "Salón Abajo", "Patio", "Fuera de la iglesia"]
 
-
-
 def conectar_sheets():
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive.file",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    
-    # Leemos de los secretos configurados en Streamlit Cloud
-    if "connections.gsheets" in st.secrets:
-        sec = st.secrets["connections.gsheets"]
-    elif "gcp_service_account" in st.secrets:
-        sec = st.secrets["gcp_service_account"]
-    else:
-        sec = st.secrets
-
-    pk = str(sec.get("private_key", ""))
-    if "\\n" in pk:
-        pk = pk.replace("\\n", "\n")
-
-    creds_dict = {
-        "type": str(sec.get("type", "service_account")),
-        "project_id": str(sec.get("project_id", "")),
-        "private_key_id": str(sec.get("private_key_id", "")),
-        "private_key": pk,
-        "client_email": str(sec.get("client_email", "")),
-        "client_id": str(sec.get("client_id", "")),
-        "auth_uri": str(sec.get("auth_uri", "https://accounts.google.com/o/oauth2/auth")),
-        "token_uri": str(sec.get("token_uri", "https://oauth2.googleapis.com/token")),
-        "auth_provider_x509_cert_url": str(sec.get("auth_provider_x509_cert_url", "https://www.googleapis.com/oauth2/v1/certs")),
-        "client_x509_cert_url": str(sec.get("client_x509_cert_url", ""))
-    }
-    
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(creds)
-    
-    url_sheet = str(sec.get("spreadsheet", "https://docs.google.com/spreadsheets/d/1y9QdvfTmH_gJvAdxvAW3D-hPU6IBLPk7rKdml6zMCzU/edit?gid=0#gid=0"))
-    sheet = client.open_by_url(url_sheet).sheet1
-    return sheet
+    # Usamos la conexión oficial y directa de Streamlit para Google Sheets
+    conn = st.connection("gsheets", type="gsheets")
+    return conn
     
     
 def obtener_datos_db():
-    sheet = conectar_sheets()
-    # Traemos todos los registros de la planilla de Google Sheets
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
+    conn = conectar_sheets()
+    # Leemos la planilla completa como DataFrame
+    df = conn.read(worksheet="Sheet1", ttl=0)
     
     if df.empty or "id" not in df.columns:
         return pd.DataFrame(columns=["id", "title", "start", "end", "color", "ministro", "salon", "descripcion", "modo"])
