@@ -6,6 +6,36 @@ import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
 
+import streamlit as st
+import pandas as pd
+
+st.set_page_config(page_title="Agenda Iglesia", page_icon="📅", layout="wide")
+
+# Estilos CSS personalizados para redondear elementos y suavizar la interfaz
+st.markdown("""
+    <style>
+    /* Estilo moderno para botones */
+    .stButton>button {
+        border-radius: 8px;
+        font-weight: 600;
+        border: none;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+    }
+    /* Estilo para tarjetas con bordes */
+    div[data-testid="stVerticalBlock"] > div[style*="border"] {
+        border-radius: 12px;
+        border-color: #f0f2f6;
+        background-color: #ffffff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y CONEXIÓN GOOGLE SHEETS
@@ -97,9 +127,19 @@ if "id_evento_editar" not in st.session_state:
 if "modo_crear_arriba" not in st.session_state:
     st.session_state["modo_crear_arriba"] = False
 
-st.sidebar.title("⚙️ Opciones")
-modo_usuario = st.sidebar.radio("Modo de Vista", ["Administrador (Gestión total)", "Solo Lectura (Consultas)"], index=0)
-es_admin = (modo_usuario == "Administrador (Gestión total)")
+with st.sidebar:
+    st.markdown("## ⚙️ Opciones")
+    st.markdown("---")
+    
+    # Mantenemos exactamente tus opciones para que 'es_admin' siga funcionando igual
+    modo_usuario = st.radio(
+        "Modo de Vista", 
+        ["Administrador (Gestión total)", "Solo Lectura (Consultas)"], 
+        index=0
+    )
+    es_admin = (modo_usuario == "Administrador (Gestión total)")
+    
+    st.markdown("---")
 
 def subir_scroll():
     components.html("""
